@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: site-monitor-v3-proxy
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: DB_NAME
+        value: site_monitor
+      - key: COLLECTION_NAME
+        value: units
