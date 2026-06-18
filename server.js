@@ -12,17 +12,24 @@ const MONGO_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || 'site_monitor';
 const COLLECTION_NAME = process.env.COLLECTION_NAME || 'units';
 
-let db;
+let db = null;
+let mongoError = null;
 
 async function connectToMongo() {
   if (!MONGO_URI) {
-    console.error('MONGODB_URI not set. Copy .env.example to .env and fill in your connection string.');
-    process.exit(1);
+    mongoError = 'MONGODB_URI env var not set';
+    console.error(mongoError);
+    return;
   }
-  const client = new MongoClient(MONGO_URI);
-  await client.connect();
-  db = client.db(DB_NAME);
-  console.log('Connected to MongoDB Atlas:', DB_NAME);
+  try {
+    const client = new MongoClient(MONGO_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    console.log('Connected to MongoDB Atlas:', DB_NAME);
+  } catch (e) {
+    mongoError = e.message;
+    console.error('MongoDB connection failed:', e.message);
+  }
 }
 
 function getCollection(payload) {
@@ -30,8 +37,22 @@ function getCollection(payload) {
   return db.collection(collName);
 }
 
-// POST /action/find
-app.post('/action/find', async (req, res) => {
+function requireDb(req, res, next) {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not connected', detail: mongoError || 'unknown' });
+  }
+  next();
+}
+
+app.get('/health', (req, res) => {
+  res.json({ status: db ? 'connected' : 'error', db: !!db, error: mongoError });
+});
+
+app.get('/', (req, res) => {
+  res.json({ service: 'Site Monitor v3 Proxy', status: db ? 'connected' : 'connecting...', error: mongoError });
+});
+
+app.post('/action/find', requireDb, async (req, res) => {
   try {
     const { filter, limit, sort } = req.body;
     const collection = getCollection(req.body);
@@ -40,8 +61,7 @@ app.post('/action/find', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/findOne
-app.post('/action/findOne', async (req, res) => {
+app.post('/action/findOne', requireDb, async (req, res) => {
   try {
     const { filter } = req.body;
     const collection = getCollection(req.body);
@@ -50,8 +70,7 @@ app.post('/action/findOne', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/insertOne
-app.post('/action/insertOne', async (req, res) => {
+app.post('/action/insertOne', requireDb, async (req, res) => {
   try {
     const { document } = req.body;
     const collection = getCollection(req.body);
@@ -60,8 +79,7 @@ app.post('/action/insertOne', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/insertMany
-app.post('/action/insertMany', async (req, res) => {
+app.post('/action/insertMany', requireDb, async (req, res) => {
   try {
     const { documents } = req.body;
     const collection = getCollection(req.body);
@@ -70,8 +88,7 @@ app.post('/action/insertMany', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/updateOne
-app.post('/action/updateOne', async (req, res) => {
+app.post('/action/updateOne', requireDb, async (req, res) => {
   try {
     const { filter, update } = req.body;
     const collection = getCollection(req.body);
@@ -80,8 +97,7 @@ app.post('/action/updateOne', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/updateMany
-app.post('/action/updateMany', async (req, res) => {
+app.post('/action/updateMany', requireDb, async (req, res) => {
   try {
     const { filter, update } = req.body;
     const collection = getCollection(req.body);
@@ -90,8 +106,7 @@ app.post('/action/updateMany', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/deleteOne
-app.post('/action/deleteOne', async (req, res) => {
+app.post('/action/deleteOne', requireDb, async (req, res) => {
   try {
     const { filter } = req.body;
     const collection = getCollection(req.body);
@@ -100,8 +115,7 @@ app.post('/action/deleteOne', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/deleteMany
-app.post('/action/deleteMany', async (req, res) => {
+app.post('/action/deleteMany', requireDb, async (req, res) => {
   try {
     const { filter } = req.body;
     const collection = getCollection(req.body);
@@ -110,8 +124,7 @@ app.post('/action/deleteMany', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /action/aggregate
-app.post('/action/aggregate', async (req, res) => {
+app.post('/action/aggregate', requireDb, async (req, res) => {
   try {
     const pipeline = req.body.pipeline || [];
     const collection = getCollection(req.body);
@@ -120,11 +133,5 @@ app.post('/action/aggregate', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', db: !!db });
-});
-
-connectToMongo().then(() => {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-});
+connectToMongo();
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
