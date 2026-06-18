@@ -58,9 +58,11 @@ app.get('/', (req, res) => {
 
 app.post('/action/find', requireDb, async (req, res) => {
   try {
-    const { filter, limit, sort } = req.body;
+    const { filter, limit, sort, skip } = req.body;
     const collection = getCollection(req.body);
-    const docs = await collection.find(filter || {}).limit(limit || 50).sort(sort || {}).toArray();
+    let cursor = collection.find(filter || {}).sort(sort || {});
+    if (skip) cursor = cursor.skip(skip);
+    const docs = await cursor.limit(limit || 5000).toArray();
     res.json({ documents: docs });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
