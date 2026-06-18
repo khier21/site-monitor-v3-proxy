@@ -22,7 +22,11 @@ async function connectToMongo() {
     return;
   }
   try {
-    const client = new MongoClient(MONGO_URI);
+    const client = new MongoClient(MONGO_URI, {
+      tls: true,
+      tlsInsecure: false,
+      serverSelectionTimeoutMS: 10000
+    });
     await client.connect();
     db = client.db(DB_NAME);
     console.log('Connected to MongoDB Atlas:', DB_NAME);
